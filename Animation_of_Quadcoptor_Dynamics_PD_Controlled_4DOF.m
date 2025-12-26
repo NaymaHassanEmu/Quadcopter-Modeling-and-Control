@@ -11,13 +11,13 @@ x0 = zeros(12, 1);
 
 % Add a slight initial tilt (10 degrees)
 tilt_deg = 10;
-x0(4) = tilt_deg * (pi/180); % Convert Roll to Radians
-x0(5) = tilt_deg * (pi/180); % Convert pitch to Radians
-x0(6) = tilt_deg * (pi/180); % Convert yaw to Radians
+x0(4) = 20 * (pi/180); % Convert Roll to Radians
+x0(5) = 30 * (pi/180); % Convert pitch to Radians
+x0(6) = 40 * (pi/180); % Convert yaw to Radians
 
 % Desired State: []
 x_desired = zeros(8, 1);
-x_desired(1) = 5; % Desired 5m height
+x_desired(1) = 15; % Desired 5m height
 
 % Controller Gains
 K_p = [1.5 6];
@@ -64,7 +64,115 @@ plot(t, u_history(:, 5:8), 'LineWidth', 1.5);
 title('Motor Speeds (rad/s)'); xlabel('Time (s)'); ylabel('w (rad/s)');
 legend('w1', 'w2', 'w3', 'w4'); grid on;
 
+% --- 3D Animation ---
+figure('Color', 'w', 'Name', '3D Quadrotor Animation');
+hold on; grid on; axis equal;
+xlabel('X (m)'); ylabel('Y (m)'); zlabel('Z (m)');
+view(3); % Set 3D view
 
+% Define quadrotor arm length for visualization
+L = 0.225; 
+
+% Animation loop
+for i = 1:5:length(t) % Step by 5 to speed up rendering
+    cla; % Clear previous frame
+    
+    % Current position
+    pos = states(i, 1:3)';
+    
+    % Current orientation (Euler angles)
+    phi = states(i, 4);
+    theta = states(i, 5);
+    psi = states(i, 6);
+    
+    % Rotation Matrix (Body to Inertial)
+    R_phi = [1 0 0; 0 cos(phi) -sin(phi); 0 sin(phi) cos(phi)];
+    R_theta = [cos(theta) 0 sin(theta); 0 1 0; -sin(theta) 0 cos(theta)];
+    R_psi = [cos(psi) -sin(psi) 0; sin(psi) cos(psi) 0; 0 0 1];
+    R = R_psi * R_theta * R_phi;
+    
+    % Define arm endpoints in body frame
+    arm1 = [L, 0, 0; -L, 0, 0]';
+    arm2 = [0, L, 0; 0, -L, 0]';
+    
+    % Rotate and translate arms to inertial frame
+    arm1_world = R * arm1 + pos;
+    arm2_world = R * arm2 + pos;
+    
+    % Draw the quadcopter arms
+    plot3(arm1_world(1,:), arm1_world(2,:), arm1_world(3,:), 'r-o', 'LineWidth', 2);
+    plot3(arm2_world(1,:), arm2_world(2,:), arm2_world(3,:), 'b-o', 'LineWidth', 2);
+    
+    % Draw the trajectory path
+    plot3(states(1:i, 1), states(1:i, 2), states(1:i, 3), 'k--', 'LineWidth', 0.5);
+    
+    % Update plot limits to follow quadcopter
+    xlim([pos(1)-2, pos(1)+2]);
+    ylim([pos(2)-2, pos(2)+2]);
+    zlim([0, max(pos(3)+2, 6)]);
+    
+    drawnow;
+end
+
+% --- Slower, Detailed 3D Animation ---
+fig = figure('Color', 'w', 'Name', 'Quadrotor 3D Visualization');
+hold on; grid on; axis equal;
+xlabel('X (m)'); ylabel('Y (m)'); zlabel('Z (m)');
+view(3); 
+
+% Define quadrotor arm length
+L = 0.25; 
+
+% Pre-calculate the trajectory for a "ghost" path
+plot3(states(:,1), states(:,2), states(:,3), 'Color', [0.8 0.8 0.8], 'LineStyle', ':');
+
+% Animation loop
+for i = 1:length(t) % Processing every single time step for maximum detail
+    if ~ishandle(fig), break; end % Stop if window is closed
+    
+    cla; % Clear the frame
+    
+    % Current position and orientation
+    pos = states(i, 1:3)';
+    phi = states(i, 4);
+    theta = states(i, 5);
+    psi = states(i, 6);
+    
+    % Reconstruct Rotation Matrix (Body to Inertial)
+    R_phi   = [1 0 0; 0 cos(phi) -sin(phi); 0 sin(phi) cos(phi)];
+    R_theta = [cos(theta) 0 sin(theta); 0 1 0; -sin(theta) 0 cos(theta)];
+    R_psi   = [cos(psi) -sin(psi) 0; sin(psi) cos(psi) 0; 0 0 1];
+    R = R_psi * R_theta * R_phi;
+    
+    % Define arm endpoints in body frame
+    % Arm 1: X-axis (Front/Back), Arm 2: Y-axis (Left/Right)
+    arm1 = [L, 0, 0; -L, 0, 0]';
+    arm2 = [0, L, 0; 0, -L, 0]';
+    
+    % Rotate and translate to world coordinates
+    arm1_w = R * arm1 + pos;
+    arm2_w = R * arm2 + pos;
+    
+    % Draw Arms
+    plot3(arm1_w(1,:), arm1_w(2,:), arm1_w(3,:), 'r-o', 'LineWidth', 3, 'MarkerFaceColor', 'r'); % Front/Back (Red)
+    plot3(arm2_w(1,:), arm2_w(2,:), arm2_w(3,:), 'b-o', 'LineWidth', 3, 'MarkerFaceColor', 'b'); % Left/Right (Blue)
+    
+    % Draw a "heading" indicator (a small line pointing forward)
+    heading = R * [L; 0; 0] + pos;
+    plot3([pos(1) heading(1)], [pos(2) heading(2)], [pos(3) heading(3)], 'k', 'LineWidth', 2);
+
+    % Keep the view focused on the drone
+    xlim([pos(1)-1, pos(1)+1]);
+    ylim([pos(2)-1, pos(2)+1]);
+    zlim([pos(3)-1, pos(3)+1]);
+    
+    title(sprintf('Time: %.2f s | Altitude: %.2f m', t(i), pos(3)));
+    
+    % CONTROL SPEED: Change this value to make it slower or faster
+    pause(0.01); 
+    
+    drawnow;
+end
 function dxdt = quad_dynamics(t, x_state, u, params)
     % Extract states
     % x_state = [x; y; z; phi; theta; psi; vx; vy; vz; p; q; r]
